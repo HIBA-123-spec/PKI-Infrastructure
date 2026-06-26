@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PKI Manager — Infrastructure à Clés Publiques</title>
+  <style>
+    /* ── Tokens ─────────────────────────────────────────────── */
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --surface2:  #1c2333;
+      --border:    #30363d;
+      --accent:    #58a6ff;
+      --accent2:   #3fb950;
+      --warn:      #e3b341;
+      --danger:    #f85149;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --font-mono: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+      --font-ui:   "Inter", system-ui, sans-serif;
+      --radius:    8px;
+      --radius-lg: 14px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* ── Layout ─────────────────────────────────────────────── */
+    .shell { display: flex; min-height: 100vh; }
+
+    .sidebar {
+      width: 240px;
+      min-height: 100vh;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      z-index: 10;
+    }
+
+    .sidebar-logo {
+      padding: 24px 20px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar-logo h1 { font-size: 1rem; font-weight: 700; letter-spacing: .03em; color: var(--accent); }
+    .sidebar-logo p  { font-size: .72rem; color: var(--muted); margin-top: 2px; }
+
+    .nav { padding: 12px 8px; flex: 1; }
+    .nav-section { font-size: .65rem; font-weight: 600; letter-spacing: .08em;
+                   color: var(--muted); text-transform: uppercase;
+                   padding: 10px 12px 4px; }
+    .nav a {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; border-radius: var(--radius);
+      color: var(--muted); text-decoration: none; font-size: .85rem;
+      transition: background .15s, color .15s;
+    }
+    .nav a:hover, .nav a.active {
+      background: var(--surface2); color: var(--text);
+    }
+    .nav a .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--border); flex-shrink: 0;
+    }
+    .nav a .dot.ok   { background: var(--accent2); }
+    .nav a .dot.warn { background: var(--warn); }
+
+    .main {
+      margin-left: 240px;
+      flex: 1;
+      padding: 32px;
+      max-width: 1100px;
+    }
+
+    /* ── Top bar ─────────────────────────────────────────────── */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 32px;
+    }
+    .page-title { font-size: 1.4rem; font-weight: 700; }
+    .page-title span { color: var(--muted); font-weight: 400; font-size: 1rem; margin-left: 8px; }
+
+    /* ── Cards / Panels ──────────────────────────────────────── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      margin-bottom: 24px;
+      overflow: hidden;
+    }
+    .panel-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-head h2 { font-size: .95rem; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+    .panel-body { padding: 20px; }
+
+    .badge {
+      font-size: .7rem; font-weight: 600; padding: 2px 8px;
+      border-radius: 20px; letter-spacing: .04em;
+    }
+    .badge-ok     { background: rgba(63,185,80,.15); color: var(--accent2); border: 1px solid rgba(63,185,80,.3); }
+    .badge-warn   { background: rgba(227,179,65,.15); color: var(--warn);   border: 1px solid rgba(227,179,65,.3); }
+    .badge-danger { background: rgba(248,81,73,.15);  color: var(--danger); border: 1px solid rgba(248,81,73,.3); }
+
+    /* ── Grid overview ───────────────────────────────────────── */
+    .overview-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 20px;
+    }
+    .stat-card .label { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+    .stat-card .value { font-size: 2rem; font-weight: 700; font-family: var(--font-mono); }
+    .stat-card .value.ok     { color: var(--accent2); }
+    .stat-card .value.warn   { color: var(--warn); }
+    .stat-card .value.accent { color: var(--accent); }
+
+    /* ── PKI chain diagram ───────────────────────────────────── */
+    .chain-diagram {
+      display: flex; align-items: center; gap: 0;
+      background: var(--surface2); border-radius: var(--radius-lg);
+      padding: 24px; margin-bottom: 24px; overflow-x: auto;
+    }
+    .chain-node {
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      min-width: 140px;
+    }
+    .chain-icon {
+      width: 56px; height: 56px; border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.5rem; border: 2px solid var(--border);
+      background: var(--surface);
+      transition: border-color .2s;
+    }
+    .chain-icon.active { border-color: var(--accent2); box-shadow: 0 0 0 4px rgba(63,185,80,.12); }
+    .chain-icon.partial { border-color: var(--warn); box-shadow: 0 0 0 4px rgba(227,179,65,.12); }
+    .chain-label { font-size: .78rem; font-weight: 600; }
+    .chain-sub   { font-size: .68rem; color: var(--muted); }
+    .chain-arrow { flex: 1; height: 2px; background: var(--border); min-width: 32px; position: relative; }
+    .chain-arrow::after {
+      content: "▶"; position: absolute; right: -6px; top: 50%;
+      transform: translateY(-50%); color: var(--border); font-size: 10px;
+    }
+    .chain-arrow.active { background: var(--accent2); }
+    .chain-arrow.active::after { color: var(--accent2); }
+
+    /* ── Forms ───────────────────────────────────────────────── */
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group.full { grid-column: 1 / -1; }
+    label { font-size: .78rem; color: var(--muted); font-weight: 500; }
+    input, select {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 9px 12px;
+      color: var(--text); font-size: .85rem; font-family: var(--font-ui);
+      transition: border-color .15s;
+      width: 100%;
+    }
+    input:focus, select:focus { outline: none; border-color: var(--accent); }
+    input[type="password"] { font-family: var(--font-mono); }
+
+    /* ── Buttons ─────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 9px 16px; border-radius: var(--radius);
+      font-size: .83rem; font-weight: 600; cursor: pointer;
+      border: 1px solid transparent; transition: all .15s;
+      white-space: nowrap;
+    }
+    .btn-primary  { background: var(--accent); color: #0d1117; border-color: var(--accent); }
+    .btn-primary:hover  { background: #79b8ff; }
+    .btn-success  { background: var(--accent2); color: #0d1117; border-color: var(--accent2); }
+    .btn-success:hover  { background: #56d364; }
+    .btn-warn     { background: transparent; color: var(--warn); border-color: var(--warn); }
+    .btn-warn:hover     { background: rgba(227,179,65,.1); }
+    .btn-danger   { background: transparent; color: var(--danger); border-color: var(--danger); }
+    .btn-danger:hover   { background: rgba(248,81,73,.1); }
+    .btn-ghost    { background: transparent; color: var(--muted); border-color: var(--border); }
+    .btn-ghost:hover    { color: var(--text); border-color: var(--accent); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+
+    /* ── Terminal output ─────────────────────────────────────── */
+    .terminal {
+      background: #010409; border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px;
+      font-family: var(--font-mono); font-size: .78rem;
+      line-height: 1.7; color: #adbac7;
+      max-height: 320px; overflow-y: auto;
+      white-space: pre-wrap; word-break: break-all;
+      display: none;
+    }
+    .terminal.show { display: block; }
+    .terminal .ok   { color: var(--accent2); }
+    .terminal .err  { color: var(--danger); }
+    .terminal .info { color: var(--accent); }
+
+    /* ── Table ───────────────────────────────────────────────── */
+    table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+    th {
+      text-align: left; padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted); font-size: .72rem;
+      text-transform: uppercase; letter-spacing: .06em;
+    }
+    td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surface2); }
+    .mono { font-family: var(--font-mono); font-size: .78rem; }
+
+    /* ── Section tabs ────────────────────────────────────────── */
+    .tabs { display: none; }
+    .tabs.active { display: block; }
+
+    /* ── Loading spinner ─────────────────────────────────────── */
+    .spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,.2);
+      border-top-color: var(--accent);
+      border-radius: 50%; animation: spin .6s linear infinite;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Toast ───────────────────────────────────────────────── */
+    #toast-container {
+      position: fixed; bottom: 24px; right: 24px;
+      display: flex; flex-direction: column; gap: 10px; z-index: 999;
+    }
+    .toast {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px 18px;
+      font-size: .83rem; min-width: 280px; max-width: 380px;
+      animation: slideIn .2s ease;
+    }
+    .toast.ok     { border-left: 3px solid var(--accent2); }
+    .toast.err    { border-left: 3px solid var(--danger); }
+    .toast.warn   { border-left: 3px solid var(--warn); }
+    @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    .section-header { margin-bottom: 20px; }
+    .section-header h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 4px; }
+    .section-header p  { font-size: .83rem; color: var(--muted); }
+
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .info-item .k { font-size: .72rem; color: var(--muted); margin-bottom: 2px; }
+    .info-item .v { font-family: var(--font-mono); font-size: .8rem; color: var(--text); word-break: break-all; }
+  </style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- ── Sidebar ─────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <h1>🔐 PKI Manager</h1>
+      <p>Infrastructure à Clés Publiques</p>
+    </div>
+    <nav class="nav">
+      <div class="nav-section">Vue d'ensemble</div>
+      <a href="#" class="active" onclick="showTab('overview', this)">
+        <span class="dot" id="dot-overview"></span> Tableau de bord
+      </a>
+
+      <div class="nav-section">Autorités</div>
+      <a href="#" onclick="showTab('root', this)">
+        <span class="dot" id="dot-root"></span> Root CA
+      </a>
+      <a href="#" onclick="showTab('intermediate', this)">
+        <span class="dot" id="dot-inter"></span> Intermediate CA
+      </a>
+
+      <div class="nav-section">Certificats</div>
+      <a href="#" onclick="showTab('leaf', this)">
+        <span class="dot" id="dot-leaf"></span> Émettre un certificat
+      </a>
+      <a href="#" onclick="showTab('revoke', this)">
+        <span class="dot warn"></span> Révoquer / CRL
+      </a>
+      <a href="#" onclick="showTab('verify', this)">
+        <span class="dot"></span> Vérifier la chaîne
+      </a>
+    </nav>
+  </aside>
+
+  <!-- ── Main ────────────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- ═══════════════════════════════════════════════════ OVERVIEW -->
+    <div id="tab-overview" class="tabs active">
+      <div class="topbar">
+        <div class="page-title">Tableau de bord <span>État de la PKI</span></div>
+        <button class="btn btn-ghost" onclick="refreshStatus()">↻ Actualiser</button>
+      </div>
+
+      <div class="overview-grid">
+        <div class="stat-card">
+          <div class="label">Root CA</div>
+          <div class="value" id="stat-root">—</div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:4px">Autorité racine</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Intermediate CA</div>
+          <div class="value" id="stat-inter">—</div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:4px">Autorité intermédiaire</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Leaf Certificates</div>
+          <div class="value accent" id="stat-leaf">0</div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:4px">Certificats émis</div>
+        </div>
+      </div>
+
+      <!-- Chain diagram -->
+      <div class="chain-diagram">
+        <div class="chain-node">
+          <div class="chain-icon" id="icon-root">🏛️</div>
+          <div class="chain-label">Root CA</div>
+          <div class="chain-sub" id="lbl-root">Non créée</div>
+        </div>
+        <div class="chain-arrow" id="arrow-1"></div>
+        <div class="chain-node">
+          <div class="chain-icon" id="icon-inter">🔗</div>
+          <div class="chain-label">Intermediate CA</div>
+          <div class="chain-sub" id="lbl-inter">Non créée</div>
+        </div>
+        <div class="chain-arrow" id="arrow-2"></div>
+        <div class="chain-node">
+          <div class="chain-icon" id="icon-leaf">📄</div>
+          <div class="chain-label">Leaf Certs</div>
+          <div class="chain-sub" id="lbl-leaf">0 certificat(s)</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>📋 Guide de démarrage rapide</h2>
+        </div>
+        <div class="panel-body">
+          <p style="color:var(--muted);font-size:.85rem;margin-bottom:16px">
+            Suivez ces étapes dans l'ordre pour construire votre PKI complète :
+          </p>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="display:flex;align-items:center;gap:14px;padding:12px;background:var(--surface2);border-radius:var(--radius)">
+              <div style="font-size:1.3rem">1️⃣</div>
+              <div>
+                <div style="font-weight:600;font-size:.85rem">Créer la Root CA</div>
+                <div style="font-size:.75rem;color:var(--muted)">Onglet "Root CA" → Remplir le formulaire → Générer</div>
+              </div>
+              <button class="btn btn-ghost" style="margin-left:auto" onclick="showTab('root', null)">Aller →</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px;padding:12px;background:var(--surface2);border-radius:var(--radius)">
+              <div style="font-size:1.3rem">2️⃣</div>
+              <div>
+                <div style="font-weight:600;font-size:.85rem">Créer l'Intermediate CA</div>
+                <div style="font-size:.75rem;color:var(--muted)">Onglet "Intermediate CA" → Remplir le formulaire → Générer et signer</div>
+              </div>
+              <button class="btn btn-ghost" style="margin-left:auto" onclick="showTab('intermediate', null)">Aller →</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px;padding:12px;background:var(--surface2);border-radius:var(--radius)">
+              <div style="font-size:1.3rem">3️⃣</div>
+              <div>
+                <div style="font-weight:600;font-size:.85rem">Émettre des certificats feuilles</div>
+                <div style="font-size:.75rem;color:var(--muted)">Onglet "Émettre un certificat" → Remplir → Signer par Intermediate CA</div>
+              </div>
+              <button class="btn btn-ghost" style="margin-left:auto" onclick="showTab('leaf', null)">Aller →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ ROOT CA -->
+    <div id="tab-root" class="tabs">
+      <div class="section-header">
+        <h2>🏛️ Root CA — Autorité Racine</h2>
+        <p>Crée la clé RSA 4096 bits et le certificat auto-signé X.509 racine.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>⚙️ Créer la Root CA</h2>
+          <span class="badge badge-warn" id="root-badge">Non créée</span>
+        </div>
+        <div class="panel-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Common Name (CN)</label>
+              <input id="root-cn" type="text" value="Mon Root CA" placeholder="Root CA">
+            </div>
+            <div class="form-group">
+              <label>Organisation (O)</label>
+              <input id="root-org" type="text" value="MonOrg PKI" placeholder="MonOrg PKI">
+            </div>
+            <div class="form-group">
+              <label>Pays (C) — 2 lettres</label>
+              <input id="root-country" type="text" value="MA" maxlength="2" placeholder="MA">
+            </div>
+            <div class="form-group">
+              <label>Région (ST)</label>
+              <input id="root-state" type="text" value="Tanger-Tetouan" placeholder="Tanger-Tetouan">
+            </div>
+            <div class="form-group full">
+              <label>Mot de passe clé privée (optionnel mais recommandé)</label>
+              <input id="root-pass" type="password" placeholder="Laissez vide pour aucun mot de passe">
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="createRootCA()" id="btn-create-root">
+              🏛️ Générer la Root CA
+            </button>
+            <button class="btn btn-ghost" onclick="loadRootInfo()">
+              ℹ️ Voir le certificat
+            </button>
+            <button class="btn btn-warn" onclick="generateRootCRL()">
+              📋 Générer la CRL
+            </button>
+          </div>
+          <div class="terminal" id="term-root"></div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-root-info" style="display:none">
+        <div class="panel-head">
+          <h2>📄 Informations du certificat Root CA</h2>
+        </div>
+        <div class="panel-body">
+          <div class="info-grid" id="root-info-grid"></div>
+          <div style="margin-top:16px">
+            <button class="btn btn-ghost" onclick="document.getElementById('root-pem').classList.toggle('show')">
+              Voir le détail complet (PEM)
+            </button>
+          </div>
+          <div class="terminal" id="root-pem" style="margin-top:12px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ INTERMEDIATE -->
+    <div id="tab-intermediate" class="tabs">
+      <div class="section-header">
+        <h2>🔗 Intermediate CA — Autorité Intermédiaire</h2>
+        <p>Génère le CSR et le fait signer par la Root CA. Protège la Root CA en usage quotidien.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>⚙️ Créer l'Intermediate CA</h2>
+          <span class="badge badge-warn" id="inter-badge">Non créée</span>
+        </div>
+        <div class="panel-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Common Name (CN)</label>
+              <input id="inter-cn" type="text" value="Mon Intermediate CA" placeholder="Intermediate CA">
+            </div>
+            <div class="form-group">
+              <label>Organisation (O) — identique à Root CA</label>
+              <input id="inter-org" type="text" value="MonOrg PKI" placeholder="MonOrg PKI">
+            </div>
+            <div class="form-group">
+              <label>Pays (C) — identique à Root CA</label>
+              <input id="inter-country" type="text" value="MA" maxlength="2" placeholder="MA">
+            </div>
+            <div class="form-group">
+              <label>Région (ST) — identique à Root CA</label>
+              <input id="inter-state" type="text" value="Tanger-Tetouan" placeholder="Tanger-Tetouan">
+            </div>
+            <div class="form-group">
+              <label>Mot de passe Intermediate CA (optionnel)</label>
+              <input id="inter-pass" type="password" placeholder="Mot de passe pour la clé intermédiaire">
+            </div>
+            <div class="form-group">
+              <label>Mot de passe Root CA (si protégée)</label>
+              <input id="inter-root-pass" type="password" placeholder="Requis si la Root CA a un mot de passe">
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="createIntermediateCA()" id="btn-create-inter">
+              🔗 Générer et signer l'Intermediate CA
+            </button>
+            <button class="btn btn-ghost" onclick="loadInterInfo()">
+              ℹ️ Voir le certificat
+            </button>
+            <button class="btn btn-warn" onclick="generateInterCRL()">
+              📋 Générer la CRL
+            </button>
+          </div>
+          <div class="terminal" id="term-inter"></div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-inter-info" style="display:none">
+        <div class="panel-head">
+          <h2>📄 Informations du certificat Intermediate CA</h2>
+        </div>
+        <div class="panel-body">
+          <div class="info-grid" id="inter-info-grid"></div>
+          <div style="margin-top:16px">
+            <button class="btn btn-ghost" onclick="document.getElementById('inter-pem').classList.toggle('show')">
+              Voir le détail complet (PEM)
+            </button>
+          </div>
+          <div class="terminal" id="inter-pem" style="margin-top:12px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ LEAF -->
+    <div id="tab-leaf" class="tabs">
+      <div class="section-header">
+        <h2>📄 Émettre un certificat final (Leaf)</h2>
+        <p>Génère un certificat serveur ou client, signé par l'Intermediate CA.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>⚙️ Nouveau certificat</h2>
+        </div>
+        <div class="panel-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Nom interne (sans espaces)</label>
+              <input id="leaf-name" type="text" value="serveur-web" placeholder="ex: serveur-web">
+            </div>
+            <div class="form-group">
+              <label>Common Name (CN) / Domaine</label>
+              <input id="leaf-cn" type="text" value="www.monserveur.ma" placeholder="www.example.com">
+            </div>
+            <div class="form-group">
+              <label>Type de certificat</label>
+              <select id="leaf-type">
+                <option value="server">Serveur (serverAuth)</option>
+                <option value="client">Client (clientAuth)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Mot de passe Intermediate CA (si protégée)</label>
+              <input id="leaf-inter-pass" type="password" placeholder="Requis si l'Intermediate CA a un mot de passe">
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-success" onclick="createLeaf()">
+              📄 Émettre le certificat
+            </button>
+          </div>
+          <div class="terminal" id="term-leaf"></div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-leaf-list">
+        <div class="panel-head">
+          <h2>📋 Certificats émis</h2>
+          <button class="btn btn-ghost" onclick="loadLeafList()" style="font-size:.78rem">↻ Actualiser</button>
+        </div>
+        <div class="panel-body" style="padding:0">
+          <table>
+            <thead>
+              <tr>
+                <th>Fichier</th>
+                <th>Common Name</th>
+                <th>Valide du</th>
+                <th>Valide jusqu'au</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="leaf-table-body">
+              <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px">Aucun certificat émis.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ REVOKE -->
+    <div id="tab-revoke" class="tabs">
+      <div class="section-header">
+        <h2>🚫 Révocation et CRL</h2>
+        <p>Révoquez des certificats et gérez les listes de révocation (CRL).</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>🚫 Révoquer un certificat</h2></div>
+        <div class="panel-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Sélectionner le certificat à révoquer</label>
+              <select id="revoke-select">
+                <option value="">— Choisir un certificat —</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Mot de passe Intermediate CA</label>
+              <input id="revoke-pass" type="password" placeholder="Requis si l'Intermediate CA a un mot de passe">
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-danger" onclick="revokeCert()">🚫 Révoquer le certificat</button>
+            <button class="btn btn-warn" onclick="loadRevokeList()">↻ Rafraîchir la liste</button>
+          </div>
+          <div class="terminal" id="term-revoke"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>📋 Générer les CRL</h2></div>
+        <div class="panel-body">
+          <p style="font-size:.83rem;color:var(--muted);margin-bottom:16px">
+            Les CRL (Certificate Revocation Lists) publient la liste des certificats révoqués.
+          </p>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Mot de passe Root CA</label>
+              <input id="crl-root-pass" type="password" placeholder="Si protégée">
+            </div>
+            <div class="form-group">
+              <label>Mot de passe Intermediate CA</label>
+              <input id="crl-inter-pass" type="password" placeholder="Si protégée">
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-warn" onclick="genRootCRL2()">📋 CRL Root CA</button>
+            <button class="btn btn-warn" onclick="genInterCRL2()">📋 CRL Intermediate CA</button>
+          </div>
+          <div class="terminal" id="term-crl"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════ VERIFY -->
+    <div id="tab-verify" class="tabs">
+      <div class="section-header">
+        <h2>✅ Vérifier la chaîne de confiance</h2>
+        <p>Valide un certificat feuille contre la chaîne Root → Intermediate → Leaf.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>🔎 Vérification</h2></div>
+        <div class="panel-body">
+          <div class="form-group" style="margin-bottom:14px">
+            <label>Sélectionner le certificat à vérifier</label>
+            <select id="verify-select">
+              <option value="">— Choisir un certificat —</option>
+            </select>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="verifyCert()">✅ Vérifier</button>
+            <button class="btn btn-ghost" onclick="loadVerifyList()">↻ Rafraîchir</button>
+          </div>
+          <div class="terminal" id="term-verify"></div>
+
+          <div id="verify-result" style="display:none;margin-top:20px">
+            <div id="verify-badge" style="margin-bottom:16px"></div>
+            <div class="terminal show" id="verify-detail"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let pkiStatus = {{ status | tojson }};
+
+// ── Tab navigation ────────────────────────────────────────────────────────────
+function showTab(name, el) {
+  document.querySelectorAll(".tabs").forEach(t => t.classList.remove("active"));
+  document.querySelectorAll(".nav a").forEach(a => a.classList.remove("active"));
+  document.getElementById("tab-" + name).classList.add("active");
+  if (el) el.classList.add("active");
+
+  if (name === "leaf")   loadLeafList();
+  if (name === "revoke") loadRevokeList();
+  if (name === "verify") loadVerifyList();
+  if (name === "overview") refreshStatus();
+}
+
+// ── Status ────────────────────────────────────────────────────────────────────
+async function refreshStatus() {
+  const r = await fetch("/api/status");
+  pkiStatus = await r.json();
+  updateStatusUI();
+}
+
+function updateStatusUI() {
+  const s = pkiStatus;
+
+  document.getElementById("stat-root").textContent  = s.root ? "✓ Active" : "✗ Absente";
+  document.getElementById("stat-root").className    = "value " + (s.root ? "ok" : "warn");
+  document.getElementById("stat-inter").textContent = s.intermediate ? "✓ Active" : "✗ Absente";
+  document.getElementById("stat-inter").className   = "value " + (s.intermediate ? "ok" : "warn");
+  document.getElementById("stat-leaf").textContent  = s.leaf_count;
+
+  document.getElementById("lbl-root").textContent  = s.root ? "✓ Créée" : "Non créée";
+  document.getElementById("lbl-inter").textContent = s.intermediate ? "✓ Créée" : "Non créée";
+  document.getElementById("lbl-leaf").textContent  = s.leaf_count + " certificat(s)";
+
+  ["root", "inter"].forEach(k => {
+    const icon = document.getElementById("icon-" + k);
+    const key  = k === "root" ? "root" : "intermediate";
+    icon.classList.toggle("active", !!s[key]);
+    document.getElementById("dot-" + k).className = "dot " + (s[key] ? "ok" : "");
+  });
+  document.getElementById("icon-leaf").classList.toggle("active", s.leaf_count > 0);
+
+  const a1 = document.getElementById("arrow-1");
+  const a2 = document.getElementById("arrow-2");
+  a1.classList.toggle("active", s.root && s.intermediate);
+  a2.classList.toggle("active", s.intermediate && s.leaf_count > 0);
+
+  document.getElementById("root-badge").textContent  = s.root ? "Active" : "Non créée";
+  document.getElementById("root-badge").className    = "badge " + (s.root ? "badge-ok" : "badge-warn");
+  document.getElementById("inter-badge").textContent = s.intermediate ? "Active" : "Non créée";
+  document.getElementById("inter-badge").className   = "badge " + (s.intermediate ? "badge-ok" : "badge-warn");
+}
+
+// ── Root CA ───────────────────────────────────────────────────────────────────
+async function createRootCA() {
+  const btn = document.getElementById("btn-create-root");
+  const term = document.getElementById("term-root");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Génération en cours…';
+  term.className = "terminal show";
+  term.innerHTML = '<span class="info">⟳ Génération de la clé RSA 4096 bits et du certificat auto-signé…</span>\n';
+
+  const body = {
+    cn: document.getElementById("root-cn").value,
+    org: document.getElementById("root-org").value,
+    country: document.getElementById("root-country").value,
+    state: document.getElementById("root-state").value,
+    password: document.getElementById("root-pass").value,
+  };
+
+  try {
+    const r = await fetch("/api/root-ca/create", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (d.success) {
+      term.innerHTML += '<span class="ok">✓ Clé RSA 4096 générée.\n✓ Certificat auto-signé créé (10 ans).\n✓ Root CA opérationnelle.\n</span>';
+      toast("Root CA créée avec succès !", "ok");
+      refreshStatus();
+      loadRootInfo();
+    } else {
+      term.innerHTML += `<span class="err">✗ Erreur : ${d.error}</span>`;
+      toast("Erreur : " + d.error, "err");
+    }
+  } catch(e) {
+    term.innerHTML += `<span class="err">✗ Erreur réseau : ${e}</span>`;
+  }
+  btn.disabled = false;
+  btn.innerHTML = "🏛️ Générer la Root CA";
+}
+
+async function loadRootInfo() {
+  const r = await fetch("/api/root-ca/info");
+  const d = await r.json();
+  if (d.success) {
+    document.getElementById("panel-root-info").style.display = "block";
+    renderInfoGrid("root-info-grid", d.info);
+    document.getElementById("root-pem").textContent = d.pem;
+  } else {
+    toast("Root CA introuvable. Créez-la d'abord.", "warn");
+  }
+}
+
+async function generateRootCRL() {
+  const term = document.getElementById("term-root");
+  term.className = "terminal show";
+  term.innerHTML = '<span class="info">⟳ Génération de la CRL Root CA…</span>\n';
+  const r = await fetch("/api/root-ca/crl", {
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ password: document.getElementById("root-pass").value })
+  });
+  const d = await r.json();
+  if (d.success) {
+    term.innerHTML += `<span class="ok">✓ CRL générée.\n</span>${d.crl}`;
+    toast("CRL Root CA générée.", "ok");
+  } else {
+    term.innerHTML += `<span class="err">✗ ${d.error}</span>`;
+  }
+}
+
+// ── Intermediate CA ───────────────────────────────────────────────────────────
+async function createIntermediateCA() {
+  const btn = document.getElementById("btn-create-inter");
+  const term = document.getElementById("term-inter");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Génération et signature…';
+  term.className = "terminal show";
+  term.innerHTML = '<span class="info">⟳ Génération clé 2048 bits + CSR + signature par Root CA…</span>\n';
+
+  const body = {
+    cn: document.getElementById("inter-cn").value,
+    org: document.getElementById("inter-org").value,
+    country: document.getElementById("inter-country").value,
+    state: document.getElementById("inter-state").value,
+    password: document.getElementById("inter-pass").value,
+    root_password: document.getElementById("inter-root-pass").value,
+  };
+
+  try {
+    const r = await fetch("/api/intermediate-ca/create", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (d.success) {
+      term.innerHTML += '<span class="ok">✓ Clé RSA 2048 générée.\n✓ CSR créé et envoyé à la Root CA.\n✓ Certificat signé par la Root CA (5 ans).\n✓ Chaîne de confiance (ca-chain.pem) créée.\n</span>';
+      toast("Intermediate CA créée et signée !", "ok");
+      refreshStatus();
+      loadInterInfo();
+    } else {
+      term.innerHTML += `<span class="err">✗ Erreur : ${d.error}</span>`;
+      toast("Erreur : " + d.error, "err");
+    }
+  } catch(e) {
+    term.innerHTML += `<span class="err">✗ Erreur réseau : ${e}</span>`;
+  }
+  btn.disabled = false;
+  btn.innerHTML = "🔗 Générer et signer l'Intermediate CA";
+}
+
+async function loadInterInfo() {
+  const r = await fetch("/api/intermediate-ca/info");
+  const d = await r.json();
+  if (d.success) {
+    document.getElementById("panel-inter-info").style.display = "block";
+    renderInfoGrid("inter-info-grid", d.info);
+    document.getElementById("inter-pem").textContent = d.pem;
+  } else {
+    toast("Intermediate CA introuvable. Créez-la d'abord.", "warn");
+  }
+}
+
+async function generateInterCRL() {
+  const term = document.getElementById("term-inter");
+  term.className = "terminal show";
+  const r = await fetch("/api/intermediate-ca/crl", {
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ password: document.getElementById("inter-pass").value })
+  });
+  const d = await r.json();
+  term.innerHTML = d.success
+    ? `<span class="ok">✓ CRL Intermediate générée.\n</span>${d.crl}`
+    : `<span class="err">✗ ${d.error}</span>`;
+  if (d.success) toast("CRL Intermediate générée.", "ok");
+}
+
+// ── Leaf ──────────────────────────────────────────────────────────────────────
+async function createLeaf() {
+  const term = document.getElementById("term-leaf");
+  term.className = "terminal show";
+  term.innerHTML = '<span class="info">⟳ Génération clé + CSR + signature…</span>\n';
+
+  const body = {
+    name: document.getElementById("leaf-name").value,
+    cn: document.getElementById("leaf-cn").value,
+    type: document.getElementById("leaf-type").value,
+    inter_password: document.getElementById("leaf-inter-pass").value,
+  };
+
+  const r = await fetch("/api/leaf/create", {
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(body)
+  });
+  const d = await r.json();
+  if (d.success) {
+    term.innerHTML += `<span class="ok">✓ Certificat "${d.name}" émis et signé.\n✓ Valide 365 jours.\n</span>`;
+    toast(`Certificat "${d.name}" créé !`, "ok");
+    refreshStatus();
+    loadLeafList();
+  } else {
+    term.innerHTML += `<span class="err">✗ ${d.error}</span>`;
+    toast("Erreur : " + d.error, "err");
+  }
+}
+
+async function loadLeafList() {
+  const r = await fetch("/api/leaf/list");
+  const d = await r.json();
+  const tbody = document.getElementById("leaf-table-body");
+
+  if (!d.certs.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px">Aucun certificat émis.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = d.certs.map(c => {
+    const info = c.info || {};
+    const cn = (info["subject"] || "").replace(/.*CN\s*=\s*/, "").trim() || "—";
+    const from = info["notBefore"] || "—";
+    const to = info["notAfter"] || "—";
+    return `
+      <tr>
+        <td class="mono">${c.filename}</td>
+        <td>${cn}</td>
+        <td class="mono" style="font-size:.75rem">${from}</td>
+        <td class="mono" style="font-size:.75rem">${to}</td>
+        <td>
+          <button class="btn btn-ghost" style="padding:4px 10px;font-size:.75rem"
+            onclick="quickVerify('${c.filename}')">✅ Vérifier</button>
+        </td>
+      </tr>`;
+  }).join("");
+}
+
+// ── Revoke ────────────────────────────────────────────────────────────────────
+async function loadRevokeList() {
+  const r = await fetch("/api/leaf/list");
+  const d = await r.json();
+  const sel = document.getElementById("revoke-select");
+  sel.innerHTML = '<option value="">— Choisir un certificat —</option>' +
+    d.certs.map(c => `<option value="${c.filename}">${c.filename}</option>`).join("");
+}
+
+async function revokeCert() {
+  const filename = document.getElementById("revoke-select").value;
+  if (!filename) { toast("Sélectionnez un certificat.", "warn"); return; }
+  const term = document.getElementById("term-revoke");
+  term.className = "terminal show";
+  term.innerHTML = `<span class="info">⟳ Révocation de ${filename}…</span>\n`;
+
+  const r = await fetch("/api/leaf/revoke", {
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ filename, inter_password: document.getElementById("revoke-pass").value })
+  });
+  const d = await r.json();
+  if (d.success) {
+    term.innerHTML += `<span class="ok">✓ ${d.message}\n✓ CRL mise à jour.</span>`;
+    toast(d.message, "ok");
+  } else {
+    term.innerHTML += `<span class="err">✗ ${d.error}</span>`;
+  }
+}
+
+async function genRootCRL2() {
+  const term = document.getElementById("term-crl");
+  term.className = "terminal show";
+  const r = await fetch("/api/root-ca/crl", {
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ password: document.getElementById("crl-root-pass").value })
+  });
+  const d = await r.json();
+  term.innerHTML = d.success ? `<span class="ok">✓ CRL Root CA générée.</span>\n${d.crl}` : `<span class="err">✗ ${d.error}</span>`;
+}
+
+async function genInterCRL2() {
+  const term = document.getElementById("term-crl");
+  term.className = "terminal show";
+  const r = await fetch("/api/intermediate-ca/crl", {
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ password: document.getElementById("crl-inter-pass").value })
+  });
+  const d = await r.json();
+  term.innerHTML = d.success ? `<span class="ok">✓ CRL Intermediate générée.</span>\n${d.crl}` : `<span class="err">✗ ${d.error}</span>`;
+}
+
+// ── Verify ────────────────────────────────────────────────────────────────────
+async function loadVerifyList() {
+  const r = await fetch("/api/leaf/list");
+  const d = await r.json();
+  const sel = document.getElementById("verify-select");
+  sel.innerHTML = '<option value="">— Choisir un certificat —</option>' +
+    d.certs.map(c => `<option value="${c.filename}">${c.filename}</option>`).join("");
+}
+
+async function quickVerify(filename) {
+  showTab("verify", null);
+  document.getElementById("verify-select").value = filename;
+  await verifyCert();
+}
+
+async function verifyCert() {
+  const filename = document.getElementById("verify-select").value;
+  if (!filename) { toast("Sélectionnez un certificat.", "warn"); return; }
+
+  const term = document.getElementById("term-verify");
+  term.className = "terminal show";
+  term.innerHTML = `<span class="info">⟳ Vérification de la chaîne pour ${filename}…</span>\n`;
+
+  const r = await fetch("/api/verify", {
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ filename })
+  });
+  const d = await r.json();
+  term.innerHTML = d.valid
+    ? `<span class="ok">✓ ${d.result}</span>`
+    : `<span class="err">✗ ${d.result}</span>`;
+
+  const result = document.getElementById("verify-result");
+  result.style.display = "block";
+  document.getElementById("verify-badge").innerHTML = d.valid
+    ? '<span class="badge badge-ok" style="font-size:.85rem;padding:6px 14px">✓ Certificat valide — chaîne de confiance vérifiée</span>'
+    : '<span class="badge badge-danger" style="font-size:.85rem;padding:6px 14px">✗ Certificat invalide ou chaîne rompue</span>';
+  document.getElementById("verify-detail").textContent = d.details || "";
+  document.getElementById("verify-detail").classList.add("show");
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function renderInfoGrid(gridId, info) {
+  const grid = document.getElementById(gridId);
+  const keys = Object.entries(info).map(([k,v]) =>
+    `<div class="info-item"><div class="k">${k}</div><div class="v">${v}</div></div>`
+  ).join("");
+  grid.innerHTML = keys;
+}
+
+function toast(msg, type="ok") {
+  const el = document.createElement("div");
+  el.className = `toast ${type}`;
+  el.textContent = (type === "ok" ? "✓ " : type === "err" ? "✗ " : "⚠ ") + msg;
+  document.getElementById("toast-container").appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+updateStatusUI();
+</script>
+</body>
+</html>
